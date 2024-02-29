@@ -1,0 +1,282 @@
+---
+title: "Assignment 1"
+output:
+  pdf_document: default
+  pdf: default
+---
+
+# Assignment 1
+
+### Authors: 
+
+-   Ronja Langrock
+
+-   Johannes Coppeneur
+
+### Exercises:
+
+The first assignment addresses problems that appears when we want to calculate the $R^2$ measure for data sets that have a large number of predictors with respect to the number of observations. To analyze that problem and find a solution we will work on the following exercises:
+
+1.  Create a Monte Carlo simulation to illustrate the problem.
+2.  Provide a mathematical proof showing that the problem really exists.
+3.  Propose a solution to address the problem.
+4.  Find a real data set to illustrate the problem and your fix.
+
+## 1. Monte Carlo Simulation
+
+"A Monte Carlo simulation generates random values for the dependent variable when the regression coefficients and the distribution of the random term are given."\
+(source: <https://bookdown.org/ccolonescu/RPoE4/simplelm.html#monte-carlo-simulation>)
+
+To show the effect of an increasing number of predictors on the $R^2$ score we make several Monte Carlo Simulations with an increasing amount of predictors. To visualize the results we plot the average $R^2$ score per iteration over the number of predictive variables.
+
+The data contains always $50$ samples/observations. The number of predictors reaches from $1$ to $50$.
+
+As we work with random variables we set the seed to ensure reproducability.
+
+```{r}
+set.seed(42)
+```
+
+Then we define some variables that describe our dataset.
+
+```{r}
+# data set size
+sample_size <- 50
+max_num_pred <- 50
+```
+
+Now we iteratively increase the number of predictors, do a Monte Carlo Simulation in each step and save the resulting $R^2$ in a matrix. The rows represent the different number of predictors, the columns represent the iterations of the simulations. Then we take the average over the rows and plot it.
+
+```{r}
+num_iter <- 100
+r2_values <- matrix(nrow = max_num_pred, ncol = num_iter)
+
+for (p in 1:max_num_pred) {
+
+  for (i in 1:num_iter) {
+    X <- matrix(rnorm(sample_size * p), nrow=sample_size, ncol = p)
+    Y <-rnorm(sample_size)
+    
+    reg_model <- lm(Y ~ X)
+    r2_values[p, i] <- summary(reg_model)$r.squared
+  }
+}
+average_r2 <- apply(r2_values, 1, mean)
+```
+
+```{r}
+plot(1:max_num_pred, average_r2, type = "b",
+     xlab = "Number of Predictors", ylab = "R2",
+     main = "Effect of increasing number of predictors on R2")
+```
+
+The plot shows the effect of an increasing number of predictors to the $R^2$ score as a measure of the quality of a fit. To create this we used random values for X and Y in the Monte Carlo Simulation and fitted a linear regression model to those values.
+
+As we can see, the $R^2$ score increases when we add predictors to a model. The interpretation of this would mean that the quality of the model increases, even when the added components are irrelevant. They artificially increase the proportion of the variance explained by the model and don't generalize anymore, which is identical to overfit the data.
+
+This is a misleading behavior. A score that measures the quality of a model should not increase when we add irelevant predictors. Therefore, the interpretability of this measure decreases with an increasing number of predictors with respect to the number of observations.
+
+## 2. Mathematical Proof
+
+The $R^2$ score is defined as follows:
+
+$R^2 = 1 - \frac{\sum_{i=1}^n (y_i - \hat{y}_i)^2}{\sum_{i=1}^n(y_i - \bar{y})^2}$
+
+with
+
+-    $y_i$ being the observed responses
+
+-    $\hat{y}_i$ being the predicted responses by the fitted model
+
+-   $\bar{y}$ being the mean over the $y_i$.
+
+The denominator of the fraction does not change in case predictors are added as it is only dependent on the observed responses. Increasing the number of predictors improves the fit, which may reduce the squared sum in the nominator (or it stays the same). Therefore, the right term is likely to decrease which makes the whole calculation go towards $1$.
+
+## 3. Proposed Solution
+
+As a solution we propose to use a measure that penalizes adding new variables that do not explain the data and thus do not increase the quality of the model . To achieve that we found the definition of the adjusted $R^2$ measure:
+
+(source: <https://en.wikipedia.org/wiki/Coefficient_of_determination>)
+
+$\bar{R}^2 = 1 - (1-R^2) \frac{n-1}{n-p-1}$
+
+with $p$ being the number of predictors and $n$ the number of observations
+
+It is equivalent to the $R^2$ score calculated wit the mean squares instead of the sum of squares. This calculation tackles the problem by penalizing the complexity (measured by the number of predictors $p$) of the model. A higher value for $p$ enlarges the factor $\frac{n-1}{n-p-1}$. This results in a higher fraction of $(1-R^2)$ to be subtracted from the highest possible value $1$.
+
+## 4. Real Data set
+
+We decided to look for a data set online and found the following Prestige data set, which is a good example to be used for regression tasks.
+
+```{r}
+library("car")
+library("carData")
+dataset <- Prestige
+```
+
+It now has 6 columns.
+
+```{r}
+head(dataset)
+```
+
+```{r}
+print(dim(dataset))
+```
+
+To fit a regression model we choose to use 'prestige' as the variable that is to be predicted.
+
+```{r}
+reg_model <- lm(prestige ~ ., data=dataset)
+summary1 <- summary(reg_model)
+```
+
+We get the following values for both $R^2$ scores :
+
+```{r}
+print(summary1$r.squared)
+```
+
+```{r}
+print(summary1$adj.r.squared)
+```
+
+As we can see, there already is a small difference for a data set of $6$ columns, $5$ of which are used as predictors.
+
+To increase the effect we introduce random variables to the read data set.
+
+```{r}
+n <- dim(dataset)[1]
+
+additional_num = 4
+dataset_add <- matrix(rnorm(n * additional_num), nrow=n, ncol = additional_num)
+names = list()
+for (i in 1:additional_num){
+  names = c(names, paste("noise", i, sep = ""))
+}
+colnames(dataset_add) <- c(names)
+
+dataset_added = cbind(dataset, dataset_add)
+
+reg_model <- lm(prestige ~ ., data=dataset_added)
+summary <- summary(reg_model)
+```
+
+```{r}
+print(summary$r.squared)
+print(summary$adj.r.squared)
+```
+
+After we added $4$ random predictors to the original data, we can see that the $R^2$ score increases while the adjusted one decreases slightly.
+
+We try the same experiment with $50$ additional columns and get the following results:
+
+```{r}
+additional_num = 50
+dataset_add <- matrix(rnorm(n * additional_num), nrow=n, ncol = additional_num)
+names = list()
+for (i in 1:additional_num){
+  names = c(names, paste("noise", i, sep = ""))
+}
+colnames(dataset_add) <- c(names)
+
+dataset_added = cbind(dataset, dataset_add)
+
+reg_model <- lm(prestige ~ ., data=dataset_added)
+summary <- summary(reg_model)
+```
+
+Now, the difference between the two values is a lot bigger. We can see again the effect of adding predictors to the regular score, which is an increase of the value. At the same time the adjusted $R^2$ score is very close to the one of the original data (it increased a little bit, which may result from the fact that some random variables suit the data). This shows that the fit of the data did in fact not massively improve with the $50$ added random variables, which was to be expected.
+
+```{r}
+print(summary$r.squared)
+print(summary$adj.r.squared)
+```
+
+To make the difference even clearer, we increase the added noise columns from $1$ to $102-6-1=95$ (for not reaching the number of observations which is $102$) and plot the resulting $R^2$ values.
+
+```{r}
+max_added_ns = n-dim(dataset)[2]-1
+r2s <- numeric(max_added_ns)
+r2s_a <- numeric(max_added_ns)
+ds_temp = dataset
+for (i in 1:max_added_ns){
+  dataset_add <- matrix(rnorm(n), nrow=n, ncol = 1)
+
+  colnames(dataset_add) <- c(paste("noise", i, sep = ""))
+  
+  ds_temp = cbind(ds_temp, dataset_add)
+  
+  reg_model <- lm(prestige ~ ., data=ds_temp)
+  summary <- summary(reg_model)
+  r2s[i]= summary$r.squared
+  r2s_a[i] = summary$adj.r.squared
+}
+```
+
+The first plot shows that the regular $R^2$ score has a trend to increase like we have seen before.
+
+```{r}
+plot(1:max_added_ns, r2s, type = "b",
+     xlab = "Number of added noise predictors", ylab = "R2",
+     main = "Effect of increasing number of predictors on R2")
+```
+
+When we look at the plot that shows the resulting values for the adjusted $R^2$ score we can see that the trend stays on one level. In both cases we see that the values jump at some. This effect even gets bigger the more random columns we add. This may be due to the fact, that some of the random generated vectors suit the model more than others.
+
+```{r}
+plot(1:max_added_ns, r2s_a, type = "b",
+     xlab = "Number of added noise predictors", ylab = "Adjusted R2",
+     main = "Effect of increasing number of predictors on adjusted R2")
+```
+
+We end our analysis by looking at one more data set from the internet (source: <https://carpentries-incubator.github.io/high-dimensional-stats-r/aio/index.html>). For this data set we again create the two plots like above.
+
+```{r}
+library("here")
+dataset <- readRDS(here("data/prostate.rds"))
+dataset <- dataset[2:10]  # drop index column
+```
+
+```{r}
+print(head(dataset))
+```
+
+```{r}
+print(dim(dataset))
+```
+
+```{r}
+n <- dim(dataset)[1]
+max_added_ns = n-dim(dataset)[2]-1
+r2s <- numeric(max_added_ns)
+r2s_a <- numeric(max_added_ns)
+ds_temp = dataset
+for (i in 1:max_added_ns){
+  dataset_add <- matrix(rnorm(n), nrow=n, ncol = 1)
+
+  colnames(dataset_add) <- c(paste("noise", i, sep = ""))
+  
+  ds_temp = cbind(ds_temp, dataset_add)
+  
+  reg_model <- lm(lpsa ~ ., data=ds_temp)
+  summary <- summary(reg_model)
+  r2s[i]= summary$r.squared
+  r2s_a[i] = summary$adj.r.squared
+}
+```
+
+```{r}
+plot(1:max_added_ns, r2s, type = "b",
+     xlab = "Number of added noise predictors", ylab = "R2",
+     main = "Effect of increasing number of predictors on R2")
+```
+
+```{r}
+
+plot(1:max_added_ns, r2s_a, type = "b",
+     xlab = "Number of added noise predictors", ylab = "Adjusted R2",
+     main = "Effect of increasing number of predictors on adjusted R2")
+```
+
+Again we can see the same trends in both of the plots.
